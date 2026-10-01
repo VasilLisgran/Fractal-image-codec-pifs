@@ -57,3 +57,32 @@ def compress(img):
             print(f"Обработано {i + 1}/{num_R} блоков...")
 
     return np.array(transforms, dtype=object)
+
+def decompress(transforms, img_shape=(256, 256), num_iterations=10):
+    H, W = img_shape
+    R_size = 4
+    blocks_per_h = H // R_size
+    blocks_per_w = W // R_size
+    num_blocks = blocks_per_h * blocks_per_w
+    
+    img_decompressed = np.full((H, W), 0.5, dtype=np.float32)
+
+    for iteration in range(num_iterations):
+        D_blocks = create_Domain_blocks(img_decompressed)
+        new_R_blocks = np.zeros((num_blocks, R_size, R_size), dtype=np.float32)
+
+        for i in range(len(transforms)):
+            j, k, s, o = transforms[i]
+            D = D_blocks[int(j)]
+            D_iso = get_isometries(D)[int(k)]
+            new_R_blocks[i] = s * D_iso + o
+
+        new_R_blocks = new_R_blocks.reshape(blocks_per_h, blocks_per_w, R_size, R_size)
+        new_R_blocks = new_R_blocks.transpose(0, 2, 1, 3)
+        img_decompressed = new_R_blocks.reshape(H, W)
+        img_decompressed = np.clip(img_decompressed, 0.0, 1.0)
+        
+        print(f"Итерация декодирования {iteration + 1}/{num_iterations} завершена...")
+        
+    return img_decompressed
+
