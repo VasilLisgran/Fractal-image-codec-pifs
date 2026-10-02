@@ -45,3 +45,43 @@ def find_best(R_block, dom):
 
     i = int(np.argmin(err))
     return i, float(s[i]), float(o), float(err[i])
+
+def compress_quadtree(img, thresh=0.00003, B_max=16, B_min=4):
+    domain_cache = prepare_domain_cache(img, sizes=(16, 8, 4))
+    transforms = []
+
+    def process(y, x, size):
+        dom = domain_cache[size]
+        i, s, o, best_error = find_best(img[y:y+size, x:x+size], dom)
+
+        if best_error <= thresh or size <= B_min:
+            transforms.append({'y': y, 'x': x, 'size': size,
+                               'j': int(dom['j'][i]), 'k': int(dom['k'][i]),
+                               's': s, 'o': o})
+        else:
+            half = size // 2
+            process(y, x, half)
+            process(y, x + half, half)
+            process(y + half, x, half)
+            process(y + half, x + half, half)
+
+    H, W = img.shape
+    for y in range(0, H, B_max):
+        for x in range(0, W, B_max):
+            process(y, x, B_max)
+    return transforms
+
+def decompress_quadtree(transforms, img_shape=(256, 256), num_iterations=20, default_val=0.5):
+    H, W = img_shape
+    img = np.full((H, W), default_val, dtype=np.float32)
+    sizes_used = {t['size'] for t in transforms}
+    for _ in range(num_iterations):
+        doms = {sz: build_domains(img, sz) for sz in sizes_used}
+        new_img = np.zeros((H, W), dtype=np.float32)
+        for t in transforms:
+            y, x, size = t['y'], t['x'], t['size']
+            D = doms[size][t['j']]
+            D_iso = get_isometries(D)[t['k']]
+            new_img[y:y + size, x:x + size] = t['s'] * (D_iso - D.mean()) + t['o']
+        img = np.clip(new_img, 0.0, 1.0)
+    return img
